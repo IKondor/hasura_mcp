@@ -1,178 +1,162 @@
-
 # Advanced Hasura GraphQL MCP Server
 
-**Version:** 1.1.0
+**Версия:** 2.0.0
 
-This Model Context Protocol (MCP) server provides an advanced interface for AI agents (like those in Cursor or Claude Desktop) to interact with a Hasura GraphQL endpoint. It enables agents to discover the API structure, execute both read-only queries and mutations (with caution), preview data, perform aggregations, and check service health.
+MCP-сервер для работы с Hasura из AI-агентов (Claude Code, Cursor, Claude Desktop). Умеет исследовать схему, выполнять GraphQL-запросы и мутации, гонять **прямой SQL** через служебный эндпоинт Hasura и проверять доступность инстансов.
 
-This server enhances LLM capabilities by allowing them to leverage your Hasura API dynamically based on natural language requests.
+Ключевое отличие версии 2.0: **один процесс обслуживает все Hasura-инстансы сразу**. Раньше на каждое окружение поднимался отдельный MCP-сервер со своим URL и секретом в аргументах; теперь список берётся из `server-list.json`, а нужный инстанс выбирается параметром `server` в каждом инструменте.
 
-## Features
+## Конфигурация: `server-list.json`
 
-This server exposes the following MCP capabilities:
-
-**Resources:**
-
-*   **Hasura GraphQL Schema (`hasura:/schema`)**
-    *   Provides the full GraphQL schema definition obtained via standard introspection.
-    *   **MIME Type:** `application/json`
-    *   Agents can read this resource to understand the complete structure of the API, including types, fields, arguments, directives, etc.
-
-**Tools:**
-
-*   **`run_graphql_query`**
-    *   **Description:** Executes a read-only GraphQL query against the Hasura endpoint. Use this for fetching data when a specific tool isn't available. Ensure the query does not modify data. *Example: `query { users { id name } }`*
-    *   **Input:** `{ query: string, variables?: object }`
-    *   **Note:** Performs a basic check to prevent execution of strings starting with `mutation`. Primarily relies on the query itself being read-only.
-
-*   **`run_graphql_mutation`**
-    *   **Description:** Executes a GraphQL mutation to insert, update, or delete data. **Use with caution**, ensure the operation is intended and safe. Relies on Hasura permissions configured for the provided Admin Secret or default role. *Example: `mutation { insert_users_one(object: {name: "Test"}) { id } }`*
-    *   **Input:** `{ mutation: string, variables?: object }`
-    *   **Security:** Allows any mutation permitted by the Hasura role. Ensure appropriate Hasura permissions are configured.
-
-*   **`list_tables`**
-    *   **Description:** Lists available data tables (or collections) managed by Hasura, organized by schema with descriptions, based on introspection heuristics (looks for object types with an 'id' field, excluding internal/aggregate types). Useful for discovering available data sources.
-    *   **Input:** `{ schemaName?: string }` (Optional schema name, attempts to infer from field descriptions if possible, defaults to 'public' conceptually)
-
-*   **`describe_table`**
-    *   **Description:** Shows the structure of a specific table including all its columns (fields) with their GraphQL types and descriptions.
-    *   **Input:** `{ tableName: string, schemaName?: string }`
-
-*   **`list_root_fields`**
-    *   **Description:** Lists the available top-level query, mutation, or subscription fields from the GraphQL schema. Useful for understanding the primary entry points for operations.
-    *   **Input:** `{ fieldType?: 'QUERY' | 'MUTATION' | 'SUBSCRIPTION' }` (Optional filter)
-
-*   **`describe_graphql_type`**
-    *   **Description:** Provides details about a specific GraphQL type (Object, Input, Scalar, Enum, Interface, Union) using schema introspection. Essential for understanding how to structure queries or mutations involving specific types.
-    *   **Input:** `{ typeName: string }` (Case-sensitive type name)
-
-*   **`preview_table_data`**
-    *   **Description:** Fetches a limited sample of rows (default 5) from a specified table to preview its data structure and content. Selects common scalar and enum fields automatically.
-    *   **Input:** `{ tableName: string, limit?: number }`
-
-*   **`aggregate_data`**
-    *   **Description:** Performs a simple aggregation (count, sum, avg, min, max) on a specified table, optionally applying a Hasura 'where' filter. Use 'list_tables' to find table names. Requires 'field' for non-count aggregations.
-    *   **Input:** `{ tableName: string, aggregateFunction: 'count'|'sum'|'avg'|'min'|'max', field?: string, filter?: object }`
-
-*   **`health_check`**
-    *   **Description:** Checks if the configured Hasura GraphQL endpoint is reachable and responding to a basic GraphQL query (`{ __typename }`). Can optionally check a specific HTTP health endpoint URL if known.
-    *   **Input:** `{ healthEndpointUrl?: string }` (Optional specific health URL)
-
-## Requirements
-
-*   Node.js (v18 or higher recommended, check `.nvmrc` or `package.json engines` if specified)
-*   `pnpm` (or `npm`/`yarn`, adjust commands accordingly)
-*   Access to a running Hasura GraphQL endpoint.
-*   (Optional but recommended) Hasura Admin Secret for privileged access, or properly configured default role permissions.
-
-## Setup and Installation
-
-1.  **Clone the Repository (if applicable):**
-    ```bash
-    # git clone <repository_url>
-    # cd mcp-hasura-advanced
-    ```
-2.  **Install Dependencies:**
-    ```bash
-    pnpm install
-    ```
-3.  **Build the Server:**
-    ```bash
-    pnpm run build
-    ```
-    This compiles the TypeScript code into the `dist` directory.
-
-## Running the Server
-
-Execute the compiled script from your terminal, providing the Hasura endpoint URL and optionally the admin secret:
-
-```bash
-# Using pnpm start script (defined in package.json)
-pnpm start <HASURA_GRAPHQL_ENDPOINT> [ADMIN_SECRET]
-
-# Or using Node directly
-node dist/index.js <HASURA_GRAPHQL_ENDPOINT> [ADMIN_SECRET]
-```
-
-**Example:**
-
-```bash
-pnpm start https://my-hasura.cloud/v1/graphql mysecretkey123
-```
-
-or
-
-```bash
-node dist/index.js https://my-hasura.cloud/v1/graphql mysecretkey123
-```
-
-If no admin secret is needed (using default role permissions):
-
-```bash
-pnpm start https://my-hasura.cloud/v1/graphql
-```
-
-The server will start, attempt an initial schema introspection, connect to the STDIO transport, and log status messages to `stderr`. It listens for MCP JSON-RPC requests on `stdin` and sends responses to `stdout`.
-
-## Usage with MCP Clients (e.g., Cursor, Claude Desktop)
-
-To connect this server to an MCP client like Cursor:
-
-1.  **Find Absolute Paths:**
-    *   Node executable: Run `which node` in your terminal.
-    *   Server script: Navigate to the `mcp-hasura-advanced` directory and run `pwd`. Append `/dist/index.js` to the result.
-    *   Project directory: The output of `pwd`.
-2.  **Configure the Client:** Open your client's configuration file (e.g., `settings.json` for Cursor, `claude_desktop_config.json` for Claude Desktop).
-3.  **Add Server Entry:** Add an entry under the appropriate key (e.g., `cursor.customMcpServers` array for Cursor, `mcpServers` object for Claude Desktop).
-
-**Example Cursor `settings.json`:**
+Файл — JSON-объект `{ "ключ": описание сервера }`. Ключ становится значением параметра `server` у инструментов.
 
 ```json
 {
-  // ... other settings ...
-  "cursor.customMcpServers": [
-    // ... other servers ...
-    {
-      "name": "My Advanced Hasura Server", // Name shown in Cursor UI
-      "command": "/path/to/your/node", // <<< Absolute path from 'which node'
-      "args": [
-        "/absolute/path/to/mcp-hasura-advanced/dist/index.js", // <<< Absolute path to compiled script
-        "https://YOUR_HASURA_ENDPOINT.com/v1/graphql",      // <<< Your endpoint
-        "YOUR_ADMIN_SECRET"                                   // <<< Your secret (REMOVE if no secret)
-      ],
-      // Optional but recommended for module resolution consistency:
-      "cwd": "/absolute/path/to/mcp-hasura-advanced" // <<< Absolute path to project root
+  "example-without-secret": {
+    "url": "https://hasura.example.org"
+  },
+  "example-with-secret": {
+    "url": "https://hasura.example.org",
+    "adminSecret": "мой-admin-secret"
+  },
+  "example-with-jwt": {
+    "url": "http://localhost:32855",
+    "authorization": "Bearer eyJhbGciOi..."
+  },
+  "example-with-custom-headers": {
+    "url": "https://hasura.example.org/v1/graphql",
+    "headers": {
+      "x-hasura-role": "admin",
+      "x-custom-gateway-key": "..."
     }
-  ]
+  }
 }
 ```
 
-**Example Claude Desktop `claude_desktop_config.json`:**
+Форматы записи:
+
+| Форма | Что делает |
+|---|---|
+| `"host"` или `"https://host"` | Сервер **без авторизации** — заголовки не отправляются |
+| `{ "url": "...", "adminSecret": "..." }` | Отправляет `x-hasura-admin-secret` |
+| `{ "url": "...", "authorization": "Bearer ..." }` | Отправляет `Authorization` |
+| `{ "url": "...", "headers": { ... } }` | Произвольные заголовки, перекрывают всё выше |
+
+Детали:
+
+* URL нормализуется: голый хост дополняется до `https://`, а хвосты `/v1/graphql`, `/v2/query`, `/v1/metadata` отрезаются — от базы сервер сам собирает `/v1/graphql`, `/v2/query`, `/v1/metadata`, `/healthz`. То есть `hasura.example.org` и `https://hasura.example.org/v1/graphql` дают одинаковый результат.
+* Если в `adminSecret` положить значение, начинающееся с `Bearer `, оно уедет в заголовок `Authorization` (с предупреждением в лог) — JWT в `x-hasura-admin-secret` Hasura не примет.
+* Пустая строка в секрете = секрета нет.
+* Путь к файлу ищется по порядку: аргумент `--config=/path/to/file.json` (или первый позиционный аргумент) → переменная окружения `HASURA_SERVER_LIST` → `server-list.json` в корне пакета → `server-list.json` в текущей директории.
+* **`server-list.json` в `.gitignore`** — в нём лежат секреты. Шаблон для копирования: `server-list.example.json`.
+
+## SQL-эндпоинт Hasura (`/v2/query`)
+
+У Hasura помимо GraphQL есть недокументированный в UI эндпоинт для прямого SQL — им пользуется инструмент `run_sql`:
+
+```
+POST {base}/v2/query
+{"type": "run_sql", "args": {"source": "default", "sql": "select 1", "read_only": true}}
+```
+
+Что важно знать:
+
+* **Авторизация та же, что у GraphQL.** Если инстанс в `server-list.json` указан без секрета — SQL-эндпоинт у него тоже открыт без секрета, отдельного токена не нужно. Если секрет есть, он уходит в тот же заголовок, что и для GraphQL.
+* **Тяжёлые запросы лучше гонять через SQL, а не через GraphQL.** JOIN-ы, `GROUP BY`, оконные функции, выборки на тысячи строк, разовые сверки между таблицами — всё это в SQL пишется короче, выполняется одним запросом и возвращает на порядок меньше «воды», чем эквивалентный GraphQL-ответ. GraphQL оставляйте для точечных выборок по связям и для мутаций через бизнес-логику Hasura.
+* **Массовые/точные данные — только SQL.** Большие значения (например, jsonb с SVG на сотни килобайт) через GraphQL-мутацию не пролезут без искажений: генерируйте SQL программно и отправляйте `run_sql`.
+* **`run_sql` уже транзакционный** — `BEGIN`/`COMMIT` слать не надо, при ошибке всё откатывается целиком.
+* **`read_only`** по умолчанию `true`: read-only транзакция, любые `INSERT`/`UPDATE`/`DELETE`/DDL упадут с `SQLSTATE 25006`. Для записи явно передайте `readOnly: false`.
+* **`source`** — имя источника данных Hasura, по умолчанию `default`. У инстансов бывает несколько источников (например, `default` и `keycloak`); список смотрите в `POST {base}/v1/metadata` с `{"type":"export_metadata","args":{}}`.
+* Ответ приходит в виде массива массивов (первая строка — заголовки); сервер сам разворачивает его в `{ columns, rowCount, rows: [{колонка: значение}] }`. Значения приходят строками — так их отдаёт Postgres в этом протоколе.
+
+## Инструменты
+
+Во всех инструментах, кроме `list_servers`, есть параметр `server` — ключ из `server-list.json`. Он обязателен, если серверов больше одного (и подставляется автоматически, если сервер ровно один). Список допустимых значений передаётся модели прямо в схеме инструмента.
+
+* **`list_servers`** — какие серверы доступны: ключ, базовый URL, эндпоинты GraphQL/SQL, есть ли авторизация. Вход: `{}`.
+* **`run_sql`** — прямой SQL через `/v2/query`. Вход: `{ server, sql, source?='default', readOnly?=true }`.
+* **`run_graphql_query`** — GraphQL-запрос на чтение. Вход: `{ server, query, variables? }`.
+* **`run_graphql_mutation`** — GraphQL-мутация (insert/update/delete). Вход: `{ server, mutation, variables? }`.
+* **`list_tables`** — таблицы (корневые поля `query_root`) с описаниями, сгруппированные по схеме. Вход: `{ server, schemaName? }`.
+* **`describe_table`** — колонки таблицы с типами и описаниями. Вход: `{ server, tableName, schemaName?='public' }`.
+* **`list_root_fields`** — корневые поля query/mutation/subscription. Вход: `{ server, fieldType?: 'QUERY'|'MUTATION'|'SUBSCRIPTION' }`.
+* **`describe_graphql_type`** — детали GraphQL-типа по интроспекции. Вход: `{ server, typeName }`.
+* **`preview_table_data`** — несколько строк таблицы, скалярные поля выбираются автоматически. Вход: `{ server, tableName, limit?=5 }`.
+* **`aggregate_data`** — `count`/`sum`/`avg`/`min`/`max` с опциональным `where`. Вход: `{ server, tableName, aggregateFunction, field?, filter? }`.
+* **`health_check`** — `GET /healthz` плюс GraphQL `{ __typename }`. Вход: `{ server, healthEndpointUrl? }`.
+
+### Ресурсы
+
+* **`hasura://{server}/schema`** — полная интроспекция схемы в JSON. `resources/list` перечисляет по одному ресурсу на каждый сервер из конфига.
+
+Схема тянется лениво (при первом обращении к конкретному серверу) и кешируется на 10 минут — на dev метаданные меняются часто, поэтому кеш протухающий.
+
+### Переменные окружения
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `HASURA_SERVER_LIST` | — | Путь к `server-list.json` |
+| `HASURA_TIMEOUT_MS` | `60000` | Таймаут HTTP-запросов |
+| `HASURA_SCHEMA_TTL_MS` | `600000` | Время жизни кеша интроспекции |
+| `HASURA_MAX_RESULT_CHARS` | `120000` | Потолок размера ответа инструмента (сверху обрезается) |
+
+## Требования
+
+* Node.js 26+
+* `pnpm` (или `npm`/`yarn`)
+* Доступ до Hasura-инстансов из `server-list.json`
+
+## Установка и сборка
+
+```bash
+pnpm install
+cp server-list.example.json server-list.json   # и вписать свои инстансы
+pnpm run build
+```
+
+## Запуск
+
+```bash
+pnpm start                              # конфиг ищется автоматически
+node dist/index.js --config=/path/to/server-list.json
+HASURA_SERVER_LIST=/path/to/list.json node dist/index.js
+```
+
+Сервер логирует статус в `stderr` (в `stdout` идёт только JSON-RPC), слушает MCP-запросы на `stdin`.
+
+## Подключение к MCP-клиенту
+
+Раньше на каждое окружение заводилась своя запись в конфиге. Теперь достаточно одной:
 
 ```json
 {
-    "mcpServers": {
-        // ... other servers ...
-        "hasura-advanced": { // Key used internally by Claude
-            "command": "/path/to/your/node", // <<< Absolute path from 'which node'
-            "args": [
-                "/absolute/path/to/mcp-hasura-advanced/dist/index.js", // <<< Absolute path to compiled script
-                "https://YOUR_HASURA_ENDPOINT.com/v1/graphql",      // <<< Your endpoint
-                "YOUR_ADMIN_SECRET"                                   // <<< Your secret (REMOVE if no secret)
-            ],
-            // Optional:
-            // "cwd": "/absolute/path/to/mcp-hasura-advanced"
-        }
+  "mcpServers": {
+    "hasura": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/hasura_mcp/dist/index.js"]
     }
+  }
 }
 ```
 
-4.  **Replace Placeholders:** Update all placeholders (`/path/to/...`, `https://YOUR...`, `YOUR_ADMIN_SECRET`) with your actual values.
-5.  **Restart/Reload Client:** Save the configuration and restart or reload your MCP client application.
-6.  **Select Server:** Choose "My Advanced Hasura Server" (or the name you specified) in the client's UI.
-7.  **Interact:** Use natural language prompts in your client's chat to leverage the server's tools (e.g., "List tables using the Hasura server", "Describe the 'users' table", "Preview data from the 'orders' table", "Run the query `{ products { name price } }` using the Hasura server").
+Для Claude Code то же самое делается командой:
 
-## Development
+```bash
+claude mcp add hasura -- /absolute/path/to/node /absolute/path/to/hasura_mcp/dist/index.js
+```
 
-*   **Run in Dev Mode:** Use `pnpm run dev <ENDPOINT> [SECRET]` to run the server directly with `ts-node` for faster iteration (no build step needed).
-*   **Testing:** Test individual tools by running the server manually (`pnpm start ...`) and piping JSON-RPC requests to its `stdin`.
+Если конфиг лежит не рядом с пакетом, допишите `--config=/absolute/path/to/server-list.json` в `args`.
+
+После подключения нужный инстанс выбирается прямо в запросе: «покажи таблицы на `pcht-dev`», «посчитай через SQL на `vlg-dev`».
+
+## Разработка
+
+* `pnpm run dev` — сборка + запуск.
+* `pnpm run typecheck` — проверка типов без сборки.
+* Ручной тест: запустить `node dist/index.js` и слать JSON-RPC в `stdin` (`initialize` → `notifications/initialized` → `tools/call`).
+
+Структура:
+
+* `src/config.ts` — чтение и нормализация `server-list.json`.
+* `src/client.ts` — HTTP-клиент одного инстанса (GraphQL, `run_sql`, интроспекция с кешем) и реестр клиентов.
+* `src/index.ts` — регистрация MCP-инструментов и ресурсов.

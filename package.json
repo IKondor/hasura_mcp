@@ -1,22 +1,25 @@
 {
-	"name": "mcp-hasura-advanced",
-	"version": "1.0.0",
-	"type": "module",
-	"main": "dist/index.js",
-	"scripts": {
-	  "build": "tsc",
-	  "start": "node dist/index.js",
-	  "dev": "ts-node src/index.ts"
-	},
-	"dependencies": {
-	  "@modelcontextprotocol/sdk": "^1.8.0",
-	  "graphql": "^16.10.0",
-	  "graphql-request": "^7.1.2",
-	  "zod": "^3.24.2"
-	},
-	"devDependencies": {
-	  "@types/node": "^18.0.0",
-	  "ts-node": "^10.9.2",
-	  "typescript": "^5.5.4"
-	}
+  "name": "mcp-hasura-advanced",
+  "version": "2.0.0",
+  "description": "Один MCP-сервер для всех Hasura-инстансов из server-list.json: GraphQL, прямой SQL и интроспекция.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-hasura-advanced": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.8.0",
+    "graphql": "^16.10.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "typescript": "^5.5.4"
   }
+}

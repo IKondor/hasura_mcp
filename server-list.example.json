@@ -1,0 +1,20 @@
+{
+  "example-without-secret": {
+    "url": "https://hasura.example.org"
+  },
+  "example-with-secret": {
+    "url": "https://hasura.example.org",
+    "adminSecret": "мой-admin-secret"
+  },
+  "example-with-jwt": {
+    "url": "http://localhost:32855",
+    "authorization": "Bearer eyJhbGciOi..."
+  },
+  "example-with-custom-headers": {
+    "url": "https://hasura.example.org/v1/graphql",
+    "headers": {
+      "x-hasura-role": "admin",
+      "x-custom-gateway-key": "..."
+    }
+  }
+}

@@ -49,3 +49,6 @@ temp/
 
 # Optional eslint cache
 .eslintcache
+
+
+server-list.json
